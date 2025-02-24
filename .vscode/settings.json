@@ -19,6 +19,8 @@
         "scheme_ble.h": "c",
         "manager.h": "c",
         "mqttcredentials.h": "c",
-        "mqttapp.h": "c"
+        "mqttapp.h": "c",
+        "ina3221.h": "c",
+        "ina_3221.h": "c"
     }
 }

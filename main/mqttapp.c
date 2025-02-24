@@ -40,7 +40,7 @@ int mqtt_subscribe(const char *topic, int qos) {
 
     int msg_id = -1;
     int retry_count = 0;
-    const int max_retries = 10; // Giới hạn số lần thử lại
+    const int max_retries = 1000; // Giới hạn số lần thử lại
 
     while (retry_count < max_retries) {
         msg_id = esp_mqtt_client_subscribe(client, topic, qos);
