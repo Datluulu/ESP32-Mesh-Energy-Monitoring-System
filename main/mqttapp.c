@@ -37,14 +37,27 @@ int mqtt_subscribe(const char *topic, int qos) {
         ESP_LOGE(TAG_MQTT, "MQTT client is not initialized!");
         return -1;
     }
-    int msg_id = esp_mqtt_client_subscribe(client, topic, qos);
-    if (msg_id >= 0) {
-        ESP_LOGI(TAG_MQTT, "Subscribed to topic: %s, msg_id=%d", topic, msg_id);
-    } else {
-        ESP_LOGE(TAG_MQTT, "Failed to subscribe to topic: %s", topic);
+
+    int msg_id = -1;
+    int retry_count = 0;
+    const int max_retries = 10; // Giới hạn số lần thử lại
+
+    while (retry_count < max_retries) {
+        msg_id = esp_mqtt_client_subscribe(client, topic, qos);
+        if (msg_id >= 0) {
+            ESP_LOGI(TAG_MQTT, "Subscribed to topic: %s, msg_id=%d", topic, msg_id);
+            return msg_id;
+        }
+
+        ESP_LOGW(TAG_MQTT, "Failed to subscribe to topic: %s (Attempt %d/%d)", topic, retry_count + 1, max_retries);
+        retry_count++;
+        vTaskDelay(pdMS_TO_TICKS(1000)); // Chờ 1 giây trước khi thử lại
     }
-    return msg_id;
+
+    ESP_LOGE(TAG_MQTT, "Failed to subscribe to topic: %s after %d attempts", topic, max_retries);
+    return -1;
 }
+
 
 static void log_error_if_nonzero(const char *message, int error_code) {
     if (error_code != 0) {
