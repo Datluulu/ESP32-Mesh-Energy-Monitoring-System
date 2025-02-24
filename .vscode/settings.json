@@ -1,0 +1,24 @@
+{
+    "idf.espIdfPathWin": "d:\\espidf\\esp\\master\\esp-idf",
+    "idf.pythonBinPathWin": "d:\\espidf\\tools\\python_env\\idf5.5_py3.11_env\\Scripts\\python.exe",
+    "idf.toolsPathWin": "d:\\espidf\\tools",
+    "idf.customExtraPaths": "d:\\espidf\\tools\\tools\\xtensa-esp-elf-gdb\\14.2_20240403\\xtensa-esp-elf-gdb\\bin;d:\\espidf\\tools\\tools\\riscv32-esp-elf-gdb\\14.2_20240403\\riscv32-esp-elf-gdb\\bin;d:\\espidf\\tools\\tools\\xtensa-esp-elf\\esp-14.2.0_20240906\\xtensa-esp-elf\\bin;d:\\espidf\\tools\\tools\\riscv32-esp-elf\\esp-14.2.0_20240906\\riscv32-esp-elf\\bin;d:\\espidf\\tools\\tools\\esp32ulp-elf\\2.38_20240113\\esp32ulp-elf\\bin;d:\\espidf\\tools\\tools\\cmake\\3.30.2\\bin;d:\\espidf\\tools\\tools\\openocd-esp32\\v0.12.0-esp32-20241016\\openocd-esp32\\bin;d:\\espidf\\tools\\tools\\ninja\\1.12.1;d:\\espidf\\tools\\tools\\idf-exe\\1.0.3;d:\\espidf\\tools\\tools\\ccache\\4.10.2\\ccache-4.10.2-windows-x86_64;d:\\espidf\\tools\\tools\\dfu-util\\0.11\\dfu-util-0.11-win64;d:\\espidf\\tools\\tools\\esp-rom-elfs\\20241011",
+    "idf.customExtraVars": {
+        "OPENOCD_SCRIPTS": "d:\\espidf\\tools\\tools\\openocd-esp32\\v0.12.0-esp32-20241016/openocd-esp32/share/openocd/scripts",
+        "IDF_CCACHE_ENABLE": "1",
+        "ESP_ROM_ELF_DIR": "d:\\espidf\\tools\\tools\\esp-rom-elfs\\20241011/"
+    },
+    "idf.gitPathWin": "d:\\espidf\\tools\\tools\\idf-git\\2.39.2\\cmd\\git.exe",
+    "idf.flashType": "UART",
+    "idf.portWin": "COM3",
+    "idf.adapterTargetName": "esp32",
+    "files.associations": {
+        "esp_bridge.h": "c",
+        "wifi_prov_mgr.h": "c",
+        "zero_provisioning.h": "c",
+        "scheme_ble.h": "c",
+        "manager.h": "c",
+        "mqttcredentials.h": "c",
+        "mqttapp.h": "c"
+    }
+}
