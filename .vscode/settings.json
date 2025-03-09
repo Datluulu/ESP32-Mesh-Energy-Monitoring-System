@@ -6,7 +6,8 @@
     "idf.customExtraVars": {
         "OPENOCD_SCRIPTS": "d:\\espidf\\tools\\tools\\openocd-esp32\\v0.12.0-esp32-20241016/openocd-esp32/share/openocd/scripts",
         "IDF_CCACHE_ENABLE": "1",
-        "ESP_ROM_ELF_DIR": "d:\\espidf\\tools\\tools\\esp-rom-elfs\\20241011/"
+        "ESP_ROM_ELF_DIR": "d:\\espidf\\tools\\tools\\esp-rom-elfs\\20241011/",
+        "IDF_TARGET": "esp32"
     },
     "idf.gitPathWin": "d:\\espidf\\tools\\tools\\idf-git\\2.39.2\\cmd\\git.exe",
     "idf.flashType": "UART",
@@ -22,5 +23,8 @@
         "mqttapp.h": "c",
         "ina3221.h": "c",
         "ina_3221.h": "c"
-    }
+    },
+    "idf.openOcdConfigs": [
+        "board/esp32-wrover-kit-3.3v.cfg"
+    ]
 }
