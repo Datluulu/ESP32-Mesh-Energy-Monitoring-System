@@ -41,7 +41,7 @@ void publish_mqtt(const char *topic, cJSON *json_data) {
     cJSON_Delete(json_data);
 }
 
-void mqtt_data_received(const char *topic, const char *data) {
+void mqtt_data_received_test(const char *topic, const char *data) {
     printf("Received topic: %s\n", topic);
     printf("Received data: %s\n", data);
 
@@ -66,6 +66,47 @@ void mqtt_data_received(const char *topic, const char *data) {
 
     cJSON_Delete(json);
 }
+void mqtt_data_received(const char *topic, const char *data) {
+    printf("Received topic: %s\n", topic);
+    printf("Received data: %s\n", data);
+
+    // Kiểm tra topic cụ thể (nếu bạn muốn giới hạn)
+    if (strcmp(topic, "/your/custom/topic") == 0) {
+        if (strcmp(data, "true") == 0) {
+            gpio_set_level(MOSFET_GPIO, 1);
+            printf("MOSFET ON\n");
+        } else if (strcmp(data, "false") == 0) {
+            gpio_set_level(MOSFET_GPIO, 0);
+            printf("MOSFET OFF\n");
+        } else {
+            printf("Unknown command\n");
+        }
+        return;
+    }
+
+    // Phần xử lý JSON phía dưới vẫn giữ nguyên nếu cần
+    cJSON *json = cJSON_Parse(data);
+    if (json == NULL) {
+        printf("Failed to parse JSON\n");
+        return;
+    }
+
+    cJSON *mac = cJSON_GetObjectItem(json, "mac");
+    cJSON *charging = cJSON_GetObjectItem(json, "charging");
+
+    if (mac && cJSON_IsString(mac) && charging && cJSON_IsBool(charging)) {
+        char device_mac[18];
+        get_device_mac(device_mac, sizeof(device_mac));
+
+        if (strcmp(mac->valuestring, device_mac) != 0) {
+            other_station_charging = cJSON_IsTrue(charging);
+            printf("Other station charging: %s\n", other_station_charging ? "true" : "false");
+        }
+    }
+
+    cJSON_Delete(json);
+}
+
 
 void ina3221_task(void *pvParameters) {
     ina3221_sensor_t sensor;
@@ -83,6 +124,14 @@ void ina3221_task(void *pvParameters) {
     get_device_mac(device_mac, sizeof(device_mac));
     get_device_ip(root_ip, sizeof(root_ip));
 
+
+    //thu sub vao dung charging topic 
+    char charging_topic[64];
+    snprintf(charging_topic, sizeof(charging_topic), "/%s/%s/charging/state", root_ip, device_mac);
+
+    mqtt_subscribe(charging_topic, 1);
+    mqtt_register_callback(mqtt_data_received);
+    //
     while (1) {
         float bus_voltage, shunt_voltage, shunt_current;
         ina3221_read_data(&sensor);
@@ -130,11 +179,11 @@ void app_main() {
     get_device_mac(device_mac, sizeof(device_mac));
     get_device_ip(root_ip, sizeof(root_ip));
 
-    char charging_topic[64];
-    snprintf(charging_topic, sizeof(charging_topic), "/%s/%s/charging/state", root_ip, device_mac);
+    char control_topic[64];
+    snprintf(control_topic, sizeof(control_topic), "/%s/%s/control/state", root_ip, device_mac);
 
-    mqtt_subscribe(charging_topic, 1);
+    mqtt_subscribe(control_topic, 1);
     mqtt_register_callback(mqtt_data_received);
-
+  
     xTaskCreate(ina3221_task, "ina3221_task", configMINIMAL_STACK_SIZE * 8, NULL, 5, NULL);
 }
