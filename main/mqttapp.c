@@ -73,25 +73,49 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
     switch ((esp_mqtt_event_id_t)event_id) {
     case MQTT_EVENT_CONNECTED:
         ESP_LOGI(TAG_MQTT, "MQTT_EVENT_CONNECTED");
+        // Đăng ký các topic bạn muốn subscribe
         mqtt_subscribe("/topic/qos0", 0);
         mqtt_subscribe("/topic/qos1", 1);
         break;
+
     case MQTT_EVENT_DISCONNECTED:
         ESP_LOGI(TAG_MQTT, "MQTT_EVENT_DISCONNECTED");
         break;
+
+    case MQTT_EVENT_SUBSCRIBED:
+        ESP_LOGI(TAG_MQTT, "MQTT_EVENT_SUBSCRIBED, msg_id=%d", event->msg_id);
+        break;
+
+    case MQTT_EVENT_UNSUBSCRIBED:
+        ESP_LOGI(TAG_MQTT, "MQTT_EVENT_UNSUBSCRIBED, msg_id=%d", event->msg_id);
+        break;
+
+    case MQTT_EVENT_PUBLISHED:
+        ESP_LOGI(TAG_MQTT, "MQTT_EVENT_PUBLISHED, msg_id=%d", event->msg_id);
+        break;
+
     case MQTT_EVENT_DATA:
         ESP_LOGI(TAG_MQTT, "MQTT_EVENT_DATA");
+        // In ra thông tin topic và data nhận được
         printf("TOPIC=%.*s\r\n", event->topic_len, event->topic);
         printf("DATA=%.*s\r\n", event->data_len, event->data);
+
+        // Nếu có callback đã đăng ký, gọi callback để xử lý dữ liệu nhận được
+        if (mqtt_callback) {
+            mqtt_callback(event->topic, event->data);
+        }
         break;
+
     case MQTT_EVENT_ERROR:
         ESP_LOGI(TAG_MQTT, "MQTT_EVENT_ERROR");
+        // Xử lý các lỗi từ MQTT
         if (event->error_handle->error_type == MQTT_ERROR_TYPE_TCP_TRANSPORT) {
             log_error_if_nonzero("Reported from esp-tls", event->error_handle->esp_tls_last_esp_err);
             log_error_if_nonzero("Reported from tls stack", event->error_handle->esp_tls_stack_err);
             log_error_if_nonzero("Captured as transport's socket errno", event->error_handle->esp_transport_sock_errno);
         }
         break;
+
     default:
         ESP_LOGI(TAG_MQTT, "Other event id: %d", event->event_id);
         break;

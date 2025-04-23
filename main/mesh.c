@@ -13,7 +13,7 @@
 #include "esp_wifi.h"
 #include "nvs_flash.h"
 #include <sys/socket.h>
-
+#include "mesh.h"
 #include "esp_mac.h"
 #include "esp_bridge.h"
 #include "esp_mesh_lite.h"
@@ -196,6 +196,8 @@ void app_wifi_set_softap_info(void)
     esp_mesh_lite_set_softap_psw_to_nvs(CONFIG_BRIDGE_SOFTAP_PASSWORD);
     esp_mesh_lite_set_softap_info(softap_ssid, CONFIG_BRIDGE_SOFTAP_PASSWORD);
 }
+
+
 void start_mesh(){
     esp_log_level_set("*", ESP_LOG_INFO);
 
