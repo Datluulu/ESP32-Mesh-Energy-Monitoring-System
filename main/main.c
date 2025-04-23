@@ -33,6 +33,15 @@ void get_device_ip(char *ip_str, size_t max_len) {
     }
 }
 
+// Lấy BSSID của root node trong mạng Mesh
+void get_root_bssid(char *bssid_str, size_t max_len) {
+    wifi_ap_record_t ap_info;
+    esp_wifi_sta_get_ap_info(&ap_info);
+    snprintf(bssid_str, max_len, "%02X:%02X:%02X:%02X:%02X:%02X",
+             ap_info.bssid[0], ap_info.bssid[1], ap_info.bssid[2],
+             ap_info.bssid[3], ap_info.bssid[4], ap_info.bssid[5]);
+}
+
 // Chờ cho đến khi có IP thật (tránh nhận được 0.0.0.0)
 void wait_for_ip() {
     esp_netif_ip_info_t ip_info;
@@ -110,9 +119,9 @@ void ina3221_task(void *pvParameters) {
 
     char topic[128];
     char device_mac[18];
-    char root_ip[16];
+    char root_bssid[18];
     get_device_mac(device_mac, sizeof(device_mac));
-    get_device_ip(root_ip, sizeof(root_ip));
+    get_root_bssid(root_bssid, sizeof(root_bssid));
 
     while (1) {
         float bus_voltage, shunt_voltage, shunt_current;
@@ -133,7 +142,7 @@ void ina3221_task(void *pvParameters) {
             cJSON_AddNumberToObject(json_data, "shunt_current", shunt_current);
             cJSON_AddNumberToObject(json_data, "timestamp", esp_timer_get_time());
 
-            snprintf(topic, sizeof(topic), "/%s/%s/ina3221/data/%u", root_ip, device_mac, i + 1);
+            snprintf(topic, sizeof(topic), "/%s/%s/ina3221/data/%u", root_bssid, device_mac, i + 1);
             publish_mqtt(topic, json_data);
         }
 
@@ -143,7 +152,7 @@ void ina3221_task(void *pvParameters) {
         cJSON_AddBoolToObject(charging_json, "charging", is_charging);
         cJSON_AddNumberToObject(charging_json, "timestamp", esp_timer_get_time());
 
-        snprintf(topic, sizeof(topic), "/%s/%s/charging/state", root_ip, device_mac);
+        snprintf(topic, sizeof(topic), "/%s/%s/charging/state", root_bssid, device_mac);
         publish_mqtt(topic, charging_json);
 
         // Logic MOSFET điều khiển theo các trạm khác
@@ -161,21 +170,21 @@ void app_main() {
     wait_for_ip();
 
     char device_mac[18];
-    char root_ip[16];
+    char root_bssid[18];
     get_device_mac(device_mac, sizeof(device_mac));
-    get_device_ip(root_ip, sizeof(root_ip));
+    get_root_bssid(root_bssid, sizeof(root_bssid));
 
     // Đăng ký callback nhận dữ liệu
     mqtt_register_callback(mqtt_data_received);
 
     // Subscribe topic điều khiển thủ công
     char control_topic[64];
-    snprintf(control_topic, sizeof(control_topic), "/%s/%s/control/state", root_ip, device_mac);
+    snprintf(control_topic, sizeof(control_topic), "/%s/%s/control/state", root_bssid, device_mac);
     mqtt_subscribe(control_topic, 1);
 
     // Subscribe topic theo dõi các trạm khác (dùng wildcards nếu broker hỗ trợ)
     char broadcast_topic[64];
-    snprintf(broadcast_topic, sizeof(broadcast_topic), "/%s/+/charging/state", root_ip);
+    snprintf(broadcast_topic, sizeof(broadcast_topic), "/%s/+/charging/state", root_bssid);
     mqtt_subscribe(broadcast_topic, 1);
 
     // Tạo task INA3221
