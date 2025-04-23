@@ -11,7 +11,7 @@
 
 #define MOSFET_GPIO        GPIO_NUM_23
 #define CURRENT_THRESHOLD  50
-#define CHARGING_TIMEOUT_US (60 * 1000000)  // 60 seconds
+#define CHARGING_TIMEOUT_US (60 * 1000)  // 60 seconds
 
 static bool other_station_charging = false;
 static bool is_charging = false;
@@ -167,15 +167,17 @@ void ina3221_task(void *pvParameters) {
         printf("Checking MOSFET state: Other station charging: %s, Current station charging: %s\n",
                other_station_charging ? "true" : "false", is_charging ? "true" : "false");
 
-        // Check if any station is charging and update MOSFET state
         uint64_t current_time_us = esp_timer_get_time();
-        if (other_station_charging || (is_charging && current_time_us - last_charging_time_us < CHARGING_TIMEOUT_US)) {
-            // If another station is charging or current station is charging within timeout
+        
+        // Kiểm tra nếu không có trạm nào sạc trong 60 giây
+        if (!other_station_charging && !is_charging && (current_time_us - last_charging_time_us >= CHARGING_TIMEOUT_US)) {
+            // Nếu không có trạm nào sạc trong 60 giây, tắt MOSFET
+            gpio_set_level(MOSFET_GPIO, 0);  // Set MOSFET to LOW
+            printf("MOSFET turned OFF due to no charging condition for 60s\n");
+        } else if (other_station_charging || (is_charging && current_time_us - last_charging_time_us < CHARGING_TIMEOUT_US)) {
+            // Nếu có trạm nào sạc hoặc trạm này sạc trong khoảng thời gian quy định
             gpio_set_level(MOSFET_GPIO, 1);  // Set MOSFET to HIGH
             printf("MOSFET turned ON due to charging condition\n");
-        } else {
-            gpio_set_level(MOSFET_GPIO, 0);  // Set MOSFET to LOW
-            printf("MOSFET turned OFF due to no charging condition\n");
         }
 
         // Update log if MOSFET state changes
