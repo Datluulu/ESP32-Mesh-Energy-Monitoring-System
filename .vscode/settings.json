@@ -11,7 +11,7 @@
     },
     "idf.gitPathWin": "d:\\espidf\\tools\\tools\\idf-git\\2.39.2\\cmd\\git.exe",
     "idf.flashType": "UART",
-    "idf.portWin": "COM4",
+    "idf.portWin": "COM8",
     "idf.adapterTargetName": "esp32",
     "files.associations": {
         "esp_bridge.h": "c",
@@ -28,7 +28,8 @@
         "semaphore": "c",
         "stdint.h": "c",
         "cstdlib": "c",
-        "esp_netif.h": "c"
+        "esp_netif.h": "c",
+        "string.h": "c"
     },
     "idf.openOcdConfigs": [
         "board/esp32-wrover-kit-3.3v.cfg"
