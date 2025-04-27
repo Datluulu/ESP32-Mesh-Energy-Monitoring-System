@@ -234,4 +234,5 @@ void app_main() {
     mqtt_subscribe(broadcast_topic, 1);
 
     xTaskCreate(ina3221_task, "ina3221_task", configMINIMAL_STACK_SIZE * 8, NULL, 5, NULL);
+    //aa 
 }
