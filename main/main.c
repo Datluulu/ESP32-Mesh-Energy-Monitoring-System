@@ -12,10 +12,11 @@
 #include <stdio.h>
 #include <string.h>
 
-#define MOSFET_GPIO             GPIO_NUM_23
-#define GPIO_NUM_13             GPIO_NUM_13
+#define MOSFET_GPIO_1           GPIO_NUM_23  // MOSFET 1
+#define MOSFET_GPIO_2           GPIO_NUM_22  // MOSFET 2
+
 #define CURRENT_THRESHOLD       50
-#define CHARGING_TIMEOUT_US     (60ULL * 1000000ULL) // 60 giây
+#define CHARGING_TIMEOUT_US     (60ULL * 100000ULL) // 60 giây
 
 static bool other_station_charging = false;
 static bool is_charging = false;
@@ -71,7 +72,6 @@ void publish_mqtt(const char *topic, cJSON *json) {
 }
 
 // Hàm callback khi nhận MQTT message
-// Hàm callback khi nhận MQTT message
 void mqtt_data_received(const char *topic, const char *data) {
     printf("RX topic: %s -> %s\n", topic, data);
 
@@ -81,38 +81,40 @@ void mqtt_data_received(const char *topic, const char *data) {
     // ===== Xử lý điều khiển MOSFET =====
     if (strstr(topic, "/control/state")) {
         bool on = (strcasecmp(data, "true") == 0 || strcmp(data, "1") == 0);
-        gpio_set_level(MOSFET_GPIO, on ? 1 : 0);
-        printf("[MOSFET CONTROL] MOSFET %s (manual)\n", on ? "ON" : "OFF");
+        gpio_set_level(MOSFET_GPIO_1, on ? 1 : 0);
+        gpio_set_level(MOSFET_GPIO_2, on ? 0 : 1);  // MOSFET 2 ngược lại với MOSFET 1
+        printf("[MOSFET CONTROL] MOSFET 1 %s, MOSFET 2 %s (manual)\n", on ? "ON" : "OFF", on ? "OFF" : "ON");
         return; // Xử lý xong MOSFET control
     }
 
-    // ===== Xử lý điều khiển GPIO từ topic /control/gpio/+ =====
-    // Xử lý điều khiển GPIO từ topic /control/gpio/1 tới /control/gpio/39
-for (int gpio_num = 1; gpio_num <= 39; gpio_num++) {
-    char topic_gpio[32];
-    snprintf(topic_gpio, sizeof(topic_gpio), "/control/gpio/%d", gpio_num);
+    // ===== Xử lý điều khiển GPIO từ topic /control/gpio/21 =====
+    char topic_gpio[128];
+    snprintf(topic_gpio, sizeof(topic_gpio), "/DATA/%s/control/gpio/", self_mac);
 
+    // Kiểm tra xem topic có chứa thông tin về GPIO hay không
     if (strstr(topic, topic_gpio)) {
-        // Kiểm tra và điều khiển GPIO tương ứng
-        gpio_num_t gpio = (gpio_num_t)gpio_num;
+        // Lấy số GPIO từ topic
+        int gpio_num = atoi(&topic[strlen(topic_gpio)]); // Lấy số GPIO từ phần sau "/control/gpio/"
 
-        // Đọc dữ liệu và điều khiển GPIO theo lệnh
-        if (strstr(data, "HIGH")) {
-            gpio_set_direction(gpio, GPIO_MODE_OUTPUT);
-            gpio_set_level(gpio, 1);  // GPIO sẽ được điều khiển tại đây
-            printf("[GPIO CONTROL] GPIO_NUM_%d set HIGH\n", gpio_num);
-        } else if (strstr(data, "LOW")) {
-            gpio_set_direction(gpio, GPIO_MODE_OUTPUT);
-            gpio_set_level(gpio, 0);  // GPIO sẽ được điều khiển tại đây
-            printf("[GPIO CONTROL] GPIO_NUM_%d set LOW\n", gpio_num);
+        if (gpio_num >= 1 && gpio_num <= 39) {
+            gpio_num_t gpio = (gpio_num_t)gpio_num;
+
+            if (strstr(data, "HIGH")) {
+                gpio_set_direction(gpio, GPIO_MODE_OUTPUT);
+                gpio_set_level(gpio, 1);  // GPIO sẽ được điều khiển tại đây
+                printf("[GPIO CONTROL] GPIO_NUM_%d set HIGH\n", gpio_num);
+            } else if (strstr(data, "LOW")) {
+                gpio_set_direction(gpio, GPIO_MODE_OUTPUT);
+                gpio_set_level(gpio, 0);  // GPIO sẽ được điều khiển tại đây
+                printf("[GPIO CONTROL] GPIO_NUM_%d set LOW\n", gpio_num);
+            } else {
+                printf("[GPIO CONTROL] Invalid data received for GPIO_NUM_%d: %s\n", gpio_num, data);
+            }
         } else {
-            printf("[GPIO CONTROL] Invalid data received for GPIO_NUM_%d: %s\n", gpio_num, data);
+            printf("[GPIO CONTROL] GPIO_NUM_%d is out of valid range (1-39)\n", gpio_num);
         }
-
         return; // Xử lý xong GPIO control cho GPIO_NUM_x
     }
-}
-
 
     // ===== Xử lý nhận trạng thái sạc từ trạm khác =====
     if (strstr(topic, "/charging/state")) {
@@ -152,18 +154,19 @@ for (int gpio_num = 1; gpio_num <= 39; gpio_num++) {
 // Task đọc INA3221 và publish MQTT
 void ina3221_task(void *pvParameters) {
     ina3221_sensor_t sensor;
-    gpio_set_direction(MOSFET_GPIO, GPIO_MODE_OUTPUT);
-    gpio_set_level(MOSFET_GPIO, 0);
+    gpio_set_direction(MOSFET_GPIO_1, GPIO_MODE_OUTPUT);
+    gpio_set_direction(MOSFET_GPIO_2, GPIO_MODE_OUTPUT);
+    gpio_set_level(MOSFET_GPIO_1, 0);  // MOSFET 1 tắt ban đầu
+    gpio_set_level(MOSFET_GPIO_2, 1);  // MOSFET 2 bật ban đầu
 
     if (ina3221_init_sensor(&sensor) != ESP_OK) {
         printf("INA3221 init failed\n");
         vTaskDelete(NULL);
     }
 
-    char mesh_id[48], ssid[33], bssid[18], self_mac[18], topic[128];
+    char ssid[33], bssid[18], self_mac[18], topic[128];
     get_device_mac(self_mac, sizeof(self_mac));
     get_ap_info(ssid, sizeof(ssid), bssid, sizeof(bssid));
-    snprintf(mesh_id, sizeof(mesh_id), "%s", ssid);
 
     bool prev_mosfet_state = false;
 
@@ -188,7 +191,7 @@ void ina3221_task(void *pvParameters) {
             cJSON_AddStringToObject(j, "self_mac", self_mac);
             cJSON_AddStringToObject(j, "parent_bssid", bssid);
 
-            snprintf(topic, sizeof(topic), "/%s/%s/ina3221/data/%u", mesh_id, self_mac, i + 1);
+            snprintf(topic, sizeof(topic), "/DATA/%s/ina3221/data/%u", self_mac, i + 1);
             publish_mqtt(topic, j);
         }
 
@@ -201,7 +204,7 @@ void ina3221_task(void *pvParameters) {
         cJSON_AddStringToObject(c, "self_mac", self_mac);
         cJSON_AddStringToObject(c, "parent_bssid", bssid);
 
-        snprintf(topic, sizeof(topic), "/%s/%s/charging/state", mesh_id, self_mac);
+        snprintf(topic, sizeof(topic), "/DATA/%s/charging/state", self_mac);
         publish_mqtt(topic, c);
 
         uint64_t now = esp_timer_get_time();
@@ -210,45 +213,47 @@ void ina3221_task(void *pvParameters) {
             printf("Other station charging timeout expired\n");
         }
 
-        // Điều khiển MOSFET
         bool should_turn_on = (!is_charging && other_station_charging);
-        gpio_set_level(MOSFET_GPIO, should_turn_on ? 1 : 0);
+        gpio_set_level(MOSFET_GPIO_1, should_turn_on ? 1 : 0);  // MOSFET 1
+        gpio_set_level(MOSFET_GPIO_2, should_turn_on ? 0 : 1);  // MOSFET 2 (ngược lại với MOSFET 1)
 
         if (prev_mosfet_state != should_turn_on) {
             prev_mosfet_state = should_turn_on;
-            printf("MOSFET state changed: %s\n", should_turn_on ? "ON" : "OFF");
+            printf("MOSFET 1 state changed: %s, MOSFET 2 state changed: %s\n", 
+                   should_turn_on ? "ON" : "OFF", 
+                   should_turn_on ? "OFF" : "ON");
         }
 
         vTaskDelay(pdMS_TO_TICKS(5000));
     }
 }
 
-// Hàm main
 void app_main() {
-    gpio_set_direction(MOSFET_GPIO, GPIO_MODE_OUTPUT);
-    gpio_set_level(MOSFET_GPIO, 0);
+    gpio_set_direction(MOSFET_GPIO_1, GPIO_MODE_OUTPUT);
+    gpio_set_direction(MOSFET_GPIO_2, GPIO_MODE_OUTPUT);
+    gpio_set_level(MOSFET_GPIO_1, 0);  // MOSFET 1 tắt ban đầu
+    gpio_set_level(MOSFET_GPIO_2, 1);  // MOSFET 2 bật ban đầu
 
     start_mesh();
     mqtt_start();
     mqtt_register_callback(mqtt_data_received);
     wait_for_ip();
 
-    char mesh_id[48], ssid[33], bssid[18], self_mac[18];
+    char ssid[33], bssid[18], self_mac[18];
     get_device_mac(self_mac, sizeof(self_mac));
     get_ap_info(ssid, sizeof(ssid), bssid, sizeof(bssid));
-    snprintf(mesh_id, sizeof(mesh_id), "%s", ssid);
 
     // Subscribe các topic
     char control_topic[128];
-    snprintf(control_topic, sizeof(control_topic), "/%s/%s/control/state", mesh_id, self_mac);
+    snprintf(control_topic, sizeof(control_topic), "/DATA/%s/control/state", self_mac);
     mqtt_subscribe(control_topic, 1);
 
     char gpio_control_topic[128];
-    snprintf(gpio_control_topic, sizeof(gpio_control_topic), "/%s/%s/control/gpio/+", mesh_id, self_mac);
+    snprintf(gpio_control_topic, sizeof(gpio_control_topic), "/DATA/%s/control/gpio/+", self_mac);
     mqtt_subscribe(gpio_control_topic, 1);
 
     char broadcast_topic[128];
-    snprintf(broadcast_topic, sizeof(broadcast_topic), "/%s/+/charging/state", mesh_id);
+    snprintf(broadcast_topic, sizeof(broadcast_topic), "/DATA/+/charging/state");
     mqtt_subscribe(broadcast_topic, 1);
 
     xTaskCreate(ina3221_task, "ina3221_task", 4096, NULL, 5, NULL);
