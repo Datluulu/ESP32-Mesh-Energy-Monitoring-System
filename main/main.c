@@ -8,14 +8,15 @@
 #include "esp_wifi.h"
 #include "esp_netif.h"
 #include "esp_timer.h"
+#include <string.h>
 
 #define MOSFET_GPIO        GPIO_NUM_23
 #define CURRENT_THRESHOLD  50
-#define CHARGING_TIMEOUT_US (60 * 1000)  // 60 seconds
+#define CHARGING_TIMEOUT_US (60ULL * 1000000ULL)  // 60 seconds
 
 static bool other_station_charging = false;
 static bool is_charging = false;
-static uint64_t last_charging_time_us = 0;
+static uint64_t last_other_charging_time_us = 0;
 
 void get_device_mac(char *mac_str, size_t max) {
     uint8_t mac[6];
@@ -65,7 +66,26 @@ void publish_mqtt(const char *topic, cJSON *json_data) {
 void mqtt_data_received(const char *topic, const char *data) {
     printf("RX topic: %s -> %s\n", topic, data);
 
-    // Nếu nhận lệnh điều khiển thủ công thì xử lý ngay
+    // Điều khiển GPIO bất kỳ
+    if (strstr(topic, "/control/gpio/")) {
+        int gpio_num = -1;
+        const char *gpio_str = strrchr(topic, '/');
+        if (gpio_str) {
+            gpio_num = atoi(gpio_str + 1);
+        }
+        if (gpio_num >= 0 && gpio_num <= 39) {
+            printf("Controlling GPIO %d to %s\n", gpio_num, data);
+            gpio_set_direction(gpio_num, GPIO_MODE_OUTPUT);
+            bool level = (strcasecmp(data, "high") == 0);
+            gpio_set_level(gpio_num, level ? 1 : 0);
+            printf("GPIO %d set to %s\n", gpio_num, level ? "HIGH" : "LOW");
+        } else {
+            printf("Invalid GPIO number: %s\n", gpio_str ? gpio_str + 1 : "null");
+        }
+        return;
+    }
+
+    // Điều khiển MOSFET thủ công
     if (strstr(topic, "control/state")) {
         bool on = (strcmp(data, "true") == 0);
         gpio_set_level(MOSFET_GPIO, on ? 1 : 0);
@@ -73,42 +93,40 @@ void mqtt_data_received(const char *topic, const char *data) {
         return;
     }
 
-    // Chỉ xử lý các bản tin trạng thái charging
+    // Chỉ quan tâm topic charging/state
     if (!strstr(topic, "/charging/state")) {
         return;
     }
 
+    // Xử lý charging
     cJSON *json = cJSON_Parse(data);
     if (!json) {
         printf("Failed to parse JSON in mqtt_data_received\n");
         return;
     }
 
-    cJSON *mac_item      = cJSON_GetObjectItem(json, "self_mac");
+    cJSON *mac_item = cJSON_GetObjectItem(json, "self_mac");
     cJSON *charging_item = cJSON_GetObjectItem(json, "charging");
 
     if (cJSON_IsString(mac_item) && cJSON_IsBool(charging_item)) {
         char self_mac[18];
         get_device_mac(self_mac, sizeof(self_mac));
 
-        // Nếu không phải bản tin của chính node này
         if (strcmp(mac_item->valuestring, self_mac) != 0) {
-            // Chỉ cập nhật flag khi nhận được TRUE
             if (cJSON_IsTrue(charging_item)) {
-                other_station_charging   = true;
-                last_charging_time_us    = esp_timer_get_time();
+                other_station_charging = true;
+                last_other_charging_time_us = esp_timer_get_time();
                 printf("Received TRUE from other station %s → other_station_charging=TRUE\n",
                        mac_item->valuestring);
-                printf("   last_charging_time_us updated to: %llu\n",
-                       (unsigned long long)last_charging_time_us);
             } else {
-                // Khi nhận false, chỉ log, không reset flag ngay
-                printf(" Received FALSE from other station %s (will timeout in 60s)\n",
+                printf("Received FALSE from other station %s (waiting for timeout)\n",
                        mac_item->valuestring);
             }
+        } else {
+            printf("Ignore self message from %s\n", self_mac);
         }
     } else {
-        printf(" MQTT data missing self_mac or charging fields\n");
+        printf("Missing fields in received MQTT data\n");
     }
 
     cJSON_Delete(json);
@@ -117,19 +135,19 @@ void mqtt_data_received(const char *topic, const char *data) {
 void ina3221_task(void *pvParameters) {
     ina3221_sensor_t sensor;
     gpio_set_direction(MOSFET_GPIO, GPIO_MODE_OUTPUT);
-    gpio_set_level(MOSFET_GPIO, 0);  // Default is LOW
+    gpio_set_level(MOSFET_GPIO, 0);  // MOSFET OFF mặc định
 
     if (ina3221_init_sensor(&sensor) != ESP_OK) {
         printf("INA3221 init failed\n");
         vTaskDelete(NULL);
     }
 
-    char mesh_id[48], ssid[33], bssid[13], self_mac[13], topic[128];
+    char mesh_id[48], ssid[33], bssid[18], self_mac[18], topic[128];
     get_device_mac(self_mac, sizeof(self_mac));
     get_ap_info(ssid, sizeof(ssid), bssid, sizeof(bssid));
     snprintf(mesh_id, sizeof(mesh_id), "%s", ssid);
 
-    bool prev_mosfet_state = false; // Initial state is LOW
+    bool prev_mosfet_state = false;
 
     while (true) {
         ina3221_read_data(&sensor);
@@ -139,7 +157,9 @@ void ina3221_task(void *pvParameters) {
             float bv, sv, si;
             ESP_ERROR_CHECK(ina3221_get_bus_voltage(&sensor.dev, i, &bv));
             ESP_ERROR_CHECK(ina3221_get_shunt_value(&sensor.dev, i, &sv, &si));
-            if (i == 0 && si > CURRENT_THRESHOLD) current_detected = true;
+            if (i == 0 && si > CURRENT_THRESHOLD) {
+                current_detected = true;
+            }
 
             cJSON *j = cJSON_CreateObject();
             cJSON_AddNumberToObject(j, "bus_voltage", bv);
@@ -154,7 +174,7 @@ void ina3221_task(void *pvParameters) {
 
         is_charging = current_detected;
 
-        // Handle charging state and MOSFET control
+        // Publish trạng thái charging
         cJSON *c = cJSON_CreateObject();
         cJSON_AddBoolToObject(c, "charging", is_charging);
         cJSON_AddNumberToObject(c, "timestamp", esp_timer_get_time());
@@ -163,27 +183,21 @@ void ina3221_task(void *pvParameters) {
         snprintf(topic, sizeof(topic), "/%s/%s/charging/state", mesh_id, self_mac);
         publish_mqtt(topic, c);
 
-        // Log trạng thái trước khi kiểm tra
-        printf("Checking MOSFET state: Other station charging: %s, Current station charging: %s\n",
-               other_station_charging ? "true" : "false", is_charging ? "true" : "false");
-
-        uint64_t current_time_us = esp_timer_get_time();
-        
-        // Kiểm tra nếu không có trạm nào sạc trong 60 giây
-        if (!other_station_charging && !is_charging && (current_time_us - last_charging_time_us >= CHARGING_TIMEOUT_US)) {
-            // Nếu không có trạm nào sạc trong 60 giây, tắt MOSFET
-            gpio_set_level(MOSFET_GPIO, 0);  // Set MOSFET to LOW
-            printf("MOSFET turned OFF due to no charging condition for 60s\n");
-        } else if (other_station_charging || (is_charging && current_time_us - last_charging_time_us < CHARGING_TIMEOUT_US)) {
-            // Nếu có trạm nào sạc hoặc trạm này sạc trong khoảng thời gian quy định
-            gpio_set_level(MOSFET_GPIO, 1);  // Set MOSFET to HIGH
-            printf("MOSFET turned ON due to charging condition\n");
+        // Timeout kiểm tra other_station_charging
+        uint64_t now = esp_timer_get_time();
+        if (other_station_charging && (now - last_other_charging_time_us >= CHARGING_TIMEOUT_US)) {
+            other_station_charging = false;
+            printf("Other station timeout expired → other_station_charging=FALSE\n");
         }
 
-        // Update log if MOSFET state changes
-        if (prev_mosfet_state != (other_station_charging || is_charging)) {
-            prev_mosfet_state = (other_station_charging || is_charging);
-            printf("MOSFET state changed: %s\n", prev_mosfet_state ? "ON" : "OFF");
+        // Quyết định MOSFET ON/OFF
+        bool should_turn_on = (!is_charging && other_station_charging);
+
+        gpio_set_level(MOSFET_GPIO, should_turn_on ? 1 : 0);
+
+        if (prev_mosfet_state != should_turn_on) {
+            prev_mosfet_state = should_turn_on;
+            printf("MOSFET state changed: %s\n", should_turn_on ? "ON" : "OFF");
         }
 
         vTaskDelay(pdMS_TO_TICKS(5000));
@@ -192,22 +206,29 @@ void ina3221_task(void *pvParameters) {
 
 void app_main() {
     gpio_set_direction(MOSFET_GPIO, GPIO_MODE_OUTPUT);
-    gpio_set_level(MOSFET_GPIO, 0);  // Default is LOW
+    gpio_set_level(MOSFET_GPIO, 0);
 
     start_mesh();
     mqtt_start();
     mqtt_register_callback(mqtt_data_received);
     wait_for_ip();
 
-    char mesh_id[48], ssid[33], bssid[13], self_mac[13];
+    char mesh_id[48], ssid[33], bssid[18], self_mac[18];
     get_device_mac(self_mac, sizeof(self_mac));
     get_ap_info(ssid, sizeof(ssid), bssid, sizeof(bssid));
     snprintf(mesh_id, sizeof(mesh_id), "%s", ssid);
 
+    // Subscribe control state
     char control_topic[128];
     snprintf(control_topic, sizeof(control_topic), "/%s/%s/control/state", mesh_id, self_mac);
     mqtt_subscribe(control_topic, 1);
 
+    // Subscribe control gpio
+    char gpio_control_topic[128];
+    snprintf(gpio_control_topic, sizeof(gpio_control_topic), "/%s/%s/control/gpio/+", mesh_id, self_mac);
+    mqtt_subscribe(gpio_control_topic, 1);
+
+    // Subscribe tất cả charging state
     char broadcast_topic[128];
     snprintf(broadcast_topic, sizeof(broadcast_topic), "/%s/+/charging/state", mesh_id);
     mqtt_subscribe(broadcast_topic, 1);

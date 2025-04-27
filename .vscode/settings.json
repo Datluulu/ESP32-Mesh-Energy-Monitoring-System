@@ -11,7 +11,7 @@
     },
     "idf.gitPathWin": "d:\\espidf\\tools\\tools\\idf-git\\2.39.2\\cmd\\git.exe",
     "idf.flashType": "UART",
-    "idf.portWin": "COM8",
+    "idf.portWin": "COM4",
     "idf.adapterTargetName": "esp32",
     "files.associations": {
         "esp_bridge.h": "c",
